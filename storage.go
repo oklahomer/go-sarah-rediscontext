@@ -14,6 +14,10 @@ import (
 
 var stashedFunc = &funcStash{}
 
+var (
+	ErrInvalidUserContext = errors.New("user context or its holding argument is nil")
+)
+
 type funcStash map[sarah.BotType][]*fncContainer
 
 func (stash *funcStash) get(botType sarah.BotType, identifier string) (*fncContainer, error) {
@@ -50,16 +54,34 @@ func SetFunc(botType sarah.BotType, id string, argType reflect.Type, fnc func(co
 	})
 }
 
+type client interface {
+	Get(string) *redis.StringCmd
+	Set(string, interface{}, time.Duration) *redis.StatusCmd
+	Del(...string) *redis.IntCmd
+	FlushAll() *redis.StatusCmd
+}
+
+type Config struct {
+	ExpiresIn time.Duration `json:"expires_in" yaml:"expires_in"`
+}
+
+func NewConfig() *Config {
+	return &Config{
+		ExpiresIn: 5 * time.Minute,
+	}
+}
+
 type userContextStorage struct {
 	botType   sarah.BotType
-	client    *redis.Client
+	client    client
 	expiresIn time.Duration
 }
 
-func NewUserContextStorage(botType sarah.BotType, redisOptions *redis.Options) sarah.UserContextStorage {
+func NewUserContextStorage(botType sarah.BotType, config *Config, redisOptions *redis.Options) sarah.UserContextStorage {
 	return &userContextStorage{
-		botType: botType,
-		client:  redis.NewClient(redisOptions),
+		botType:   botType,
+		expiresIn: config.ExpiresIn,
+		client:    redis.NewClient(redisOptions),
 	}
 }
 
@@ -70,9 +92,10 @@ type JsonArgument struct {
 
 func (storage *userContextStorage) Get(key string) (sarah.ContextualFunc, error) {
 	b, err := storage.client.Get(key).Bytes()
-	if err != nil {
-		//return nil, err
+	if err == redis.Nil {
 		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
 
 	if len(b) == 0 {
@@ -103,12 +126,12 @@ func (storage *userContextStorage) Get(key string) (sarah.ContextualFunc, error)
 }
 
 func (storage *userContextStorage) Set(key string, userContext *sarah.UserContext) error {
-	if userContext == nil {
-		return errors.New("Storing UserContext is nil.")
-	}
+	if userContext == nil ||
+		userContext.Serializable == nil ||
+		userContext.Serializable.FuncIdentifier == "" ||
+		userContext.Serializable.Argument == nil {
 
-	if userContext.Serializable == nil {
-		return errors.New("Serializable argument is not set.")
+		return ErrInvalidUserContext
 	}
 
 	arg := &JsonArgument{
