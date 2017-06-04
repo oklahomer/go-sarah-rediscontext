@@ -90,6 +90,8 @@ type JsonArgument struct {
 	Argument       interface{} `json:"argument"`
 }
 
+type EmptyArgument struct{}
+
 func (storage *userContextStorage) Get(key string) (sarah.ContextualFunc, error) {
 	b, err := storage.client.Get(key).Bytes()
 	if err == redis.Nil {
