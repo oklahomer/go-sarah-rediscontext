@@ -1,0 +1,24 @@
+language: go
+sudo: false
+
+go:
+  - "1.11.4"
+  - "1.12"
+  - "tip"
+
+before_install:
+  - export PATH=$HOME/gopath/bin:$PATH
+
+script:
+  - golangci-lint run
+  - go test -race ./...
+
+matrix:
+  allow_failures:
+   - go: tip
+
+git:
+  depth: 10
+
+env:
+  - GO111MODULE=on
