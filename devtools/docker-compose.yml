@@ -1,0 +1,20 @@
+version: "3"
+services:
+  redis:
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+  redis-cluster:
+    build:
+      context: ./redis-cluster
+      dockerfile: Dockerfile
+    ports:
+      - "7000:7000"
+      - "7001:7001"
+      - "7002:7002"
+      - "7003:7003"
+      - "7004:7004"
+      - "7005:7005"
+    tty: true
