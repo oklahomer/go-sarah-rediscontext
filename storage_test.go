@@ -3,10 +3,11 @@ package rediscontext
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-redis/redis"
+	"errors"
+	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/oklahomer/go-sarah"
 	"github.com/tidwall/gjson"
-	"golang.org/x/xerrors"
 	"reflect"
 	"strconv"
 	"testing"
@@ -84,6 +85,62 @@ func TestNewUserContextStorage(t *testing.T) {
 
 		if _, ok := redisStorage.client.(*redisClient); !ok {
 			t.Errorf("Returned client is not type of redis.Clilent: %T.", redisStorage.client)
+		}
+	})
+}
+
+func TestWithRedisClient(t *testing.T) {
+	c := &redis.Client{}
+	opt := WithRedisClient(c)
+
+	storage := &userContextStorage{}
+	opt(storage)
+
+	client, ok := storage.client.(*redisClient)
+	if !ok {
+		t.Errorf("Unexpected type of redis client is stashed: %T", storage.client)
+	}
+	if client.c == nil {
+		t.Errorf("Expected Redis client is not set")
+	}
+}
+
+func TestWithRedisClusterClient(t *testing.T) {
+	c := &redis.ClusterClient{}
+	opt := WithRedisClusterClient(c)
+
+	storage := &userContextStorage{}
+	opt(storage)
+
+	client, ok := storage.client.(*redisClient)
+	if !ok {
+		t.Errorf("Unexpected type of redis client is stashed: %T", storage.client)
+	}
+	if client.cl == nil {
+		t.Errorf("Expected Redis client is not set")
+	}
+}
+
+func TestNew(t *testing.T) {
+	t.Run("without option", func(t *testing.T) {
+		var botType sarah.BotType = "dummyBot"
+		_, err := New(botType, &Config{})
+		if err != ErrRedisClientNotGiven {
+			t.Errorf("Expected error is not returned: %T", err)
+		}
+	})
+
+	t.Run("with redis client", func(t *testing.T) {
+		opt := WithRedisClient(&redis.Client{})
+		var botType sarah.BotType = "dummyBot"
+		c, err := New(botType, &Config{}, opt)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		storage := c.(*userContextStorage)
+		if storage.client == nil {
+			t.Error("Redis client is not set.")
 		}
 	})
 }
@@ -291,7 +348,7 @@ func TestUserContextStorage_Get(t *testing.T) {
 	}
 
 	t.Run("Redis error", func(t *testing.T) {
-		returningErr := xerrors.New("redis error")
+		returningErr := errors.New("redis error")
 		client := &DummyClient{
 			getFunc: func(_ string) ([]byte, error) {
 				return []byte{}, returningErr
@@ -302,7 +359,7 @@ func TestUserContextStorage_Get(t *testing.T) {
 		}
 
 		contextualFunc, err := storage.Get("key")
-		if !xerrors.Is(err, returningErr) {
+		if !errors.Is(err, returningErr) {
 			t.Fatalf("Expected error is not returned: %#v", err)
 		}
 
@@ -361,6 +418,125 @@ func TestUserContextStorage_Flush(t *testing.T) {
 
 		if !called {
 			t.Error("Flush method is not called.")
+		}
+	})
+}
+
+func TestRedisClient_Integration(t *testing.T) {
+	t.Run("with plain Redis", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skip integration test")
+		}
+
+		key := fmt.Sprintf("redis-key:%d", time.Now().Nanosecond())
+		client := &redisClient{
+			c: redis.NewClient(&redis.Options{
+				Addr:       "localhost:6379",
+				MaxRetries: 3,
+			}),
+		}
+
+		// Initial get without stored data
+		_, err := client.Get(key)
+		if err == nil {
+			t.Error("Expected error is not returned.")
+		}
+
+		// Set
+		val := "value"
+		err = client.Set(key, val, 0)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Get
+		got, err := client.Get(key)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+		if string(got) != val {
+			t.Errorf("Unexpected value is returned: %s", string(got))
+		}
+
+		// Flush
+		err = client.FlushAll()
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Get without stored data
+		got, err = client.Get(key)
+		if err == nil {
+			t.Error("Expected error is not returned.")
+		}
+		if len(got) != 0 {
+			t.Errorf("Unexpected value is returned: %s", string(got))
+		}
+
+		// Prepare for Del
+		err = client.Set(key, val, 0)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Del
+		err = client.Del(key)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Confirm Del
+		_, err = client.Get(key)
+		if err == nil {
+			t.Error("Expected error is not returned.")
+		}
+	})
+
+	t.Run("with Redis Cluster", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skip integration test")
+		}
+
+		key := fmt.Sprintf("redis-cluster-key:%d", time.Now().Nanosecond())
+		client := &redisClient{
+			cl: redis.NewClusterClient(&redis.ClusterOptions{
+				Addrs:      []string{"localhost:7000"},
+				MaxRetries: 3,
+			}),
+		}
+
+		// Initial get without stored data
+		_, err := client.Get(key)
+		if err == nil {
+			t.Error("Expected error is not returned.")
+		}
+
+		// Set
+		val := "value"
+		err = client.Set(key, val, 0)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Get
+		got, err := client.Get(key)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+		if string(got) != val {
+			t.Errorf("Unexpected value is returned: %s", string(got))
+		}
+
+		// Del
+		err = client.Del(key)
+		if err != nil {
+			t.Errorf("Unexpected error is returned: %s", err.Error())
+		}
+
+		// Confirm Del
+		_, err = client.Get(key)
+		if err == nil {
+			t.Error("Expected error is not returned.")
 		}
 	})
 }

@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/oklahomer/go-sarah"
 	"github.com/tidwall/gjson"
-	"golang.org/x/xerrors"
 	"reflect"
 	"time"
 )
@@ -18,6 +17,9 @@ var stashedFunc = &funcStash{}
 var (
 	// ErrInvalidUserContext indicates that malformed sarah.UserContext is passed and operation can not be performed.
 	ErrInvalidUserContext = errors.New("user context or its holding argument is nil")
+
+	// ErrRedisClientNotGiven indicates that no redis client or redis cluster client is given to New() via Option.
+	ErrRedisClientNotGiven = errors.New("client must be set with WithRedisClient or WithRedisClusterClient")
 )
 
 type funcStash map[sarah.BotType][]*fncContainer
@@ -65,25 +67,42 @@ type client interface {
 }
 
 type redisClient struct {
-	c *redis.Client
+	c  *redis.Client
+	cl *redis.ClusterClient
 }
 
 var _ client = (*redisClient)(nil)
 
 func (r *redisClient) Get(key string) ([]byte, error) {
-	return r.c.Get(key).Bytes()
+	if r.cl != nil {
+		return r.cl.Get(context.TODO(), key).Bytes()
+	}
+
+	return r.c.Get(context.TODO(), key).Bytes()
 }
 
 func (r *redisClient) Set(key string, data interface{}, ex time.Duration) error {
-	return r.c.Set(key, data, ex).Err()
+	if r.cl != nil {
+		return r.cl.Set(context.TODO(), key, data, ex).Err()
+	}
+
+	return r.c.Set(context.TODO(), key, data, ex).Err()
 }
 
 func (r *redisClient) Del(keys ...string) error {
-	return r.c.Del(keys...).Err()
+	if r.cl != nil {
+		return r.cl.Del(context.TODO(), keys...).Err()
+	}
+
+	return r.c.Del(context.TODO(), keys...).Err()
 }
 
 func (r *redisClient) FlushAll() error {
-	return r.c.FlushAll().Err()
+	if r.cl != nil {
+		return r.cl.FlushAll(context.TODO()).Err()
+	}
+
+	return r.c.FlushAll(context.TODO()).Err()
 }
 
 // Config contains some configuration variables.
@@ -116,6 +135,41 @@ func NewUserContextStorage(botType sarah.BotType, config *Config, redisOptions *
 	}
 }
 
+type Option func(u *userContextStorage)
+
+func WithRedisClient(r *redis.Client) Option {
+	return func(u *userContextStorage) {
+		u.client = &redisClient{
+			c: r,
+		}
+	}
+}
+
+func WithRedisClusterClient(r *redis.ClusterClient) Option {
+	return func(u *userContextStorage) {
+		u.client = &redisClient{
+			cl: r,
+		}
+	}
+}
+
+func New(botType sarah.BotType, config *Config, opts ...Option) (sarah.UserContextStorage, error) {
+	u := &userContextStorage{
+		botType:   botType,
+		expiresIn: config.ExpiresIn,
+	}
+
+	for _, opt := range opts {
+		opt(u)
+	}
+
+	if u.client == nil {
+		return nil, ErrRedisClientNotGiven
+	}
+
+	return u, nil
+}
+
 func (storage *userContextStorage) Get(key string) (sarah.ContextualFunc, error) {
 	b, err := storage.client.Get(key)
 	if err == redis.Nil {
@@ -123,13 +177,13 @@ func (storage *userContextStorage) Get(key string) (sarah.ContextualFunc, error)
 		// User context is not stored.
 		return nil, nil
 	} else if err != nil {
-		return nil, xerrors.Errorf("failed to fetch state from redis: %w", err)
+		return nil, fmt.Errorf("failed to fetch state from redis: %w", err)
 	}
 
 	res := gjson.ParseBytes(b)
 	identifier := res.Get("func_identifier")
 	if !identifier.Exists() {
-		return nil, xerrors.Errorf("mandatory field, func_identifier, is not set in %s", b)
+		return nil, fmt.Errorf("mandatory field, func_identifier, is not set in %s", b)
 	}
 
 	container, err := stashedFunc.get(storage.botType, identifier.String())
