@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/oklahomer/go-sarah"
+	"github.com/oklahomer/go-sarah/v4"
 	"github.com/tidwall/gjson"
 	"reflect"
 	"strconv"
@@ -56,37 +56,6 @@ func TestNewConfig(t *testing.T) {
 	if config == nil {
 		t.Fatal("Returned instance is nil.")
 	}
-}
-
-func TestNewUserContextStorage(t *testing.T) {
-	SetupAndRun(func() {
-		var botType sarah.BotType = "dummyBot"
-		config := NewConfig()
-		redisOptions := &redis.Options{}
-
-		storage := NewUserContextStorage(botType, config, redisOptions)
-
-		if storage == nil {
-			t.Fatal("Returned instance is nil.")
-		}
-
-		redisStorage, ok := storage.(*userContextStorage)
-		if !ok {
-			t.Fatal("Returned instance is not type of userContextStorage.")
-		}
-
-		if redisStorage.botType != botType {
-			t.Errorf("Unexpected BotType is returned: %s.", redisStorage.botType)
-		}
-
-		if redisStorage.expiresIn != config.ExpiresIn {
-			t.Errorf("Unexpected expiration time is returned: %d.", redisStorage.expiresIn)
-		}
-
-		if _, ok := redisStorage.client.(*redisClient); !ok {
-			t.Errorf("Returned client is not type of redis.Clilent: %T.", redisStorage.client)
-		}
-	})
 }
 
 func TestWithRedisClient(t *testing.T) {

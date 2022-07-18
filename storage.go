@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/oklahomer/go-sarah"
+	"github.com/oklahomer/go-sarah/v4"
 	"github.com/tidwall/gjson"
 	"reflect"
 	"time"
@@ -125,15 +125,6 @@ type userContextStorage struct {
 }
 
 var _ sarah.UserContextStorage = (*userContextStorage)(nil)
-
-// NewUserContextStorage initializes UserContextStorage implementation.
-func NewUserContextStorage(botType sarah.BotType, config *Config, redisOptions *redis.Options) sarah.UserContextStorage {
-	return &userContextStorage{
-		botType:   botType,
-		expiresIn: config.ExpiresIn,
-		client:    &redisClient{c: redis.NewClient(redisOptions)},
-	}
-}
 
 type Option func(u *userContextStorage)
 
