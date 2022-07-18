@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/oklahomer/go-sarah"
+	"github.com/oklahomer/go-sarah/v4"
 	"github.com/tidwall/gjson"
 	"reflect"
 	"time"
