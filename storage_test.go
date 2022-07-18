@@ -58,37 +58,6 @@ func TestNewConfig(t *testing.T) {
 	}
 }
 
-func TestNewUserContextStorage(t *testing.T) {
-	SetupAndRun(func() {
-		var botType sarah.BotType = "dummyBot"
-		config := NewConfig()
-		redisOptions := &redis.Options{}
-
-		storage := NewUserContextStorage(botType, config, redisOptions)
-
-		if storage == nil {
-			t.Fatal("Returned instance is nil.")
-		}
-
-		redisStorage, ok := storage.(*userContextStorage)
-		if !ok {
-			t.Fatal("Returned instance is not type of userContextStorage.")
-		}
-
-		if redisStorage.botType != botType {
-			t.Errorf("Unexpected BotType is returned: %s.", redisStorage.botType)
-		}
-
-		if redisStorage.expiresIn != config.ExpiresIn {
-			t.Errorf("Unexpected expiration time is returned: %d.", redisStorage.expiresIn)
-		}
-
-		if _, ok := redisStorage.client.(*redisClient); !ok {
-			t.Errorf("Returned client is not type of redis.Clilent: %T.", redisStorage.client)
-		}
-	})
-}
-
 func TestWithRedisClient(t *testing.T) {
 	c := &redis.Client{}
 	opt := WithRedisClient(c)

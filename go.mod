@@ -1,4 +1,4 @@
-module github.com/oklahomer/go-sarah-rediscontext
+module github.com/oklahomer/go-sarah-rediscontext/v2
 
 go 1.12
 

@@ -126,15 +126,6 @@ type userContextStorage struct {
 
 var _ sarah.UserContextStorage = (*userContextStorage)(nil)
 
-// NewUserContextStorage initializes UserContextStorage implementation.
-func NewUserContextStorage(botType sarah.BotType, config *Config, redisOptions *redis.Options) sarah.UserContextStorage {
-	return &userContextStorage{
-		botType:   botType,
-		expiresIn: config.ExpiresIn,
-		client:    &redisClient{c: redis.NewClient(redisOptions)},
-	}
-}
-
 type Option func(u *userContextStorage)
 
 func WithRedisClient(r *redis.Client) Option {
